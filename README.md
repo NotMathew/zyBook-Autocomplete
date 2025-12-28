@@ -9,7 +9,7 @@ https://www.tampermonkey.net
 
 2. Install the script
 Click [here](https://github.com/NotMathew/zyBook-Autocomplete/raw/refs/heads/main/zyBook-Autocomplete.user.js) to install the script.
-Tampermonkey will open an install page — click Install.
+Tampermonkey will open an install page - click Install.
 
 3. Open zyBooks
 Go to https://www.zybooks.com
