@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         zyBooks Autocomplete
-// @version      0.1
-// @description  Autocomplete for zyBooks
+// @version      0.5
+// @description  Autocomplete for zyBooks with Animation Support and 2x Speed
 // @author       NotMathew
 // @match        https://learn.zybooks.com/zybook/*
 // @namespace    https://github.com/NotMathew/zyBook-Autocomplete
@@ -13,19 +13,21 @@
 (function() {
     'use strict';
 
-    console.log('zyBooks Autocomplete Enhanced (Fixed) loaded');
+    console.log('zyBooks Autocomplete v0.5 loaded');
 
-    // Settings - BALANCED SPEED MODE (Fast but Reliable)
+    // Settings
     const AUTO_RUN = true;
-    const DELAY_AFTER_SHOW_ANSWER = 800; // Give time for answer to load
-    const DELAY_BETWEEN_QUESTIONS = 300; // Reasonable spacing
-    const CLICK_DELAY = 100; // Enough for UI to register
-    const SUBMIT_DELAY = 250; // Time for input to register
-    const TYPING_DELAY = 0; // Instant typing
-    const RETRY_DELAY = 500; // Time for zyBooks to process and show result
+    const DELAY_AFTER_SHOW_ANSWER = 1000; // Increased to give more time for answer to appear
+    const DELAY_BETWEEN_QUESTIONS = 300;
+    const CLICK_DELAY = 100;
+    const SUBMIT_DELAY = 250;
+    const RETRY_DELAY = 500;
+    const ANIMATION_CHECK_INTERVAL = 500;
 
     let isRunning = false;
     let processedElements = new Set();
+    const processedAnimationControls = new WeakSet();
+    const lastClickedSteps = new WeakMap();
 
     // Main function
     function runAutoComplete() {
@@ -34,17 +36,177 @@
 
         console.log('🚀 Starting zyBooks autocomplete...');
 
-        // Step 1: Click all Show Answer buttons
+        handleAnimations();
         clickShowAnswerButtons();
 
-        // Step 2: Wait longer for answers to fully appear, then fill them
         setTimeout(() => {
             fillAllAnswers();
             isRunning = false;
         }, DELAY_AFTER_SHOW_ANSWER);
     }
 
-    // Click Show Answer buttons (twice if needed) - EXTREME SPEED
+    // ==========================================
+    // ANIMATION HANDLING
+    // ==========================================
+    
+    function enable2xSpeed(animationControl) {
+        const speedCheckbox = animationControl.querySelector('.speed-control input[type="checkbox"]');
+        if (speedCheckbox && !speedCheckbox.checked) {
+            console.log('⚡ Enabling 2x speed');
+            speedCheckbox.click();
+            return true;
+        }
+        return false;
+    }
+
+    function getCurrentStepNumber(animationControl) {
+        const highlighted = animationControl.querySelector('button.step.step-highlight');
+        if (highlighted) {
+            const stepText = highlighted.querySelector('.title')?.textContent;
+            return parseInt(stepText) || 0;
+        }
+        return 0;
+    }
+
+    function clickNextStep(animationControl) {
+        const stepButtons = Array.from(animationControl.querySelectorAll('button.step'));
+        const currentStep = getCurrentStepNumber(animationControl);
+        const lastClicked = lastClickedSteps.get(animationControl) || 0;
+
+        for (const button of stepButtons) {
+            const stepText = button.querySelector('.title')?.textContent;
+            const stepNumber = parseInt(stepText) || 0;
+            const isDisabled = button.classList.contains('disabled');
+            const isHighlighted = button.classList.contains('step-highlight');
+
+            if (!isDisabled && !isHighlighted && stepNumber > currentStep && stepNumber > lastClicked) {
+                console.log(`⏩ Clicking step ${stepNumber}`);
+                button.click();
+                lastClickedSteps.set(animationControl, stepNumber);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function processAnimationControl(animationControl) {
+        if (processedAnimationControls.has(animationControl)) {
+            return;
+        }
+        processedAnimationControls.add(animationControl);
+
+        const observer = new MutationObserver(() => {
+            enable2xSpeed(animationControl);
+            clickNextStep(animationControl);
+        });
+
+        observer.observe(animationControl, {
+            attributes: true,
+            childList: true,
+            subtree: true
+        });
+
+        enable2xSpeed(animationControl);
+        clickNextStep(animationControl);
+    }
+
+    function findAndProcessAllAnimationControls() {
+        const allControls = document.querySelectorAll('.animation-controls');
+        allControls.forEach(control => {
+            enable2xSpeed(control);
+            clickNextStep(control);
+            processAnimationControl(control);
+        });
+    }
+
+    function handleAnimations() {
+        console.log('🎬 Checking for animations...');
+        
+        findAndProcessAllAnimationControls();
+        
+        const animationContainers = document.querySelectorAll(
+            '.interactive-activity-container.animation-player-content-resource.participation, ' +
+            '.animation-player-content-resource'
+        );
+        
+        animationContainers.forEach(container => {
+            const chevron = container.querySelector('.zb-chevron');
+            if (chevron && chevron.classList.contains('filled')) {
+                return;
+            }
+            
+            const controls = container.querySelectorAll('.animation-controls');
+            controls.forEach(control => {
+                enable2xSpeed(control);
+                clickNextStep(control);
+                processAnimationControl(control);
+            });
+            
+            processAnimationContainer(container);
+        });
+        
+        handleStandalonePlayButtons();
+    }
+    
+    function processAnimationContainer(container) {
+        const startButtons = container.querySelectorAll('.start-button, .zb-button.start-graphic');
+        startButtons.forEach(btn => {
+            const btnText = btn.textContent.trim();
+            if (btnText === 'Start' || btnText.toLowerCase().includes('start')) {
+                btn.click();
+            }
+        });
+        
+        clickPlayButton(container);
+        handlePauseInteractions(container);
+    }
+    
+    function clickPlayButton(container) {
+        const playByAria = container.querySelectorAll('[aria-label="Play"]');
+        playByAria.forEach(btn => {
+            const iconElement = btn.querySelector('svg, .zyante-icon, [class*="icon"]');
+            if (!iconElement || !iconElement.classList.contains('rotate-180')) {
+                btn.click();
+            }
+        });
+    }
+    
+    function handlePauseInteractions(container) {
+        const pauseButtons = container.querySelectorAll('.play-button.bounce, .continue-button, .resume-button');
+        pauseButtons.forEach(btn => btn.click());
+        
+        const forwardButtons = container.querySelectorAll('.forward-button, .step-forward, .next-step');
+        forwardButtons.forEach(btn => {
+            if (!btn.disabled) btn.click();
+        });
+    }
+    
+    function handleStandalonePlayButtons() {
+        const allPlayButtons = document.querySelectorAll('[aria-label="Play"]');
+        
+        allPlayButtons.forEach(btn => {
+            const parent = btn.closest('.interactive-activity-container, .participation');
+            if (parent) {
+                const chevron = parent.querySelector('.zb-chevron');
+                if (chevron && chevron.classList.contains('filled')) return;
+            }
+            
+            const iconElement = btn.querySelector('svg, [class*="icon"]');
+            if (!iconElement || !iconElement.classList.contains('rotate-180')) {
+                btn.click();
+            }
+        });
+        
+        document.querySelectorAll('.speed-control input[type="checkbox"]').forEach(checkbox => {
+            if (!checkbox.checked) checkbox.click();
+        });
+        
+        document.querySelectorAll('.title').forEach(el => {
+            if (el.textContent.trim() === 'Start') el.click();
+        });
+    }
+
+    // Click Show Answer buttons
     function clickShowAnswerButtons() {
         const showAnswerButtons = $('button').filter(function() {
             const text = $(this).text().trim().toLowerCase();
@@ -61,16 +223,13 @@
                 return;
             }
 
-            // First click - almost instant
             setTimeout(() => {
                 btn[0].click();
-                
-                // Second click - very short delay
                 setTimeout(() => {
                     btn[0].click();
                     btn.addClass('auto-processed');
                     processedElements.add(elementId + '-double-clicked');
-                }, 150); // Reduced from 300ms
+                }, 150);
             }, index * CLICK_DELAY);
         });
     }
@@ -79,17 +238,15 @@
     function fillAllAnswers() {
         console.log('🔍 Looking for answers to fill...');
 
-        // Find all question containers
-        const questions = $('.question-set-question, .zb-activity, .question-container, [class*="question"]').filter(':visible');
+        const questions = $('.question-set-question, .short-answer-question').filter(':visible');
 
-        console.log(`📋 Found ${questions.length} potential question containers`);
+        console.log(`📋 Found ${questions.length} questions`);
 
         questions.each(function(index) {
             const question = $(this);
             const elementId = getElementUniqueId(question[0]);
             
             if (processedElements.has(elementId + '-filled')) {
-                console.log(`⏭️  Question ${index + 1} already processed`);
                 return;
             }
 
@@ -100,17 +257,16 @@
         });
     }
 
-    // Process a single question - IMPROVED for multiple choice
+    // Process a single question
     function processQuestion(question, index) {
         console.log(`\n📌 Processing question ${index + 1}`);
 
-        // Check if already answered correctly
-        if (question.find('.correct, .answered-correctly, .zb-correct').length > 0) {
+        // Check if already correct
+        if (question.find('.zb-explanation.correct').length > 0) {
             console.log(`✅ Question ${index + 1} already correct, skipping`);
             return;
         }
 
-        // Determine question type
         const hasRadioButtons = question.find('input[type="radio"]').length > 0;
         const hasCheckboxes = question.find('input[type="checkbox"]').length > 0;
         const hasTextInput = question.find('input[type="text"], textarea').length > 0;
@@ -121,25 +277,17 @@
         } else if (hasTextInput) {
             console.log(`✍️  Text input question detected`);
             handleTextInput(question, index);
-        } else {
-            console.log(`❓ Unknown question type, trying text input`);
-            handleTextInput(question, index);
         }
     }
 
-    // Handle multiple choice questions - CLICK LABEL METHOD
+    // Handle multiple choice questions
     function handleMultipleChoice(question, index) {
-        // Find all clickable labels/choices instead of just inputs
         const choices = question.find('label, .choice, .option, [role="radio"]').filter(':visible');
         
         if (choices.length === 0) {
-            console.log(`❌ No choices found, trying inputs...`);
-            // Fallback to inputs
             handleMultipleChoiceByInput(question, index);
             return;
         }
-
-        console.log(`📋 Found ${choices.length} clickable choices`);
 
         let currentChoiceIndex = 0;
         let attempts = 0;
@@ -147,102 +295,54 @@
 
         function tryNextChoice() {
             attempts++;
-            
-            if (attempts > maxAttempts) {
-                console.log(`⚠️  Max attempts reached`);
-                return;
-            }
+            if (attempts > maxAttempts) return;
 
-            const isCorrect = question.find('.correct, .answered-correctly, .zb-correct, [class*="correct"]').filter(function() {
-                return !$(this).hasClass('incorrect') && !$(this).hasClass('zb-incorrect');
-            }).length > 0;
-
+            const isCorrect = question.find('.zb-explanation.correct').length > 0;
             if (isCorrect) {
                 console.log(`✅ Question ${index + 1} correct!`);
                 return;
             }
 
-            if (currentChoiceIndex >= choices.length) {
-                console.log(`⚠️  Tried all choices`);
-                return;
-            }
+            if (currentChoiceIndex >= choices.length) return;
 
             const choice = $(choices[currentChoiceIndex]);
-            const choiceText = choice.text().trim().substring(0, 30);
-            console.log(`🎯 Clicking choice ${currentChoiceIndex + 1}/${choices.length}: "${choiceText}..."`);
-
-            // Method 1: Direct label click (most reliable for zyBooks)
             choice[0].click();
             
-            // Method 2: Find and click associated input
             const input = choice.find('input[type="radio"], input[type="checkbox"]').first();
             if (input.length) {
                 input.prop('checked', true);
                 input[0].click();
             }
 
-            // Method 3: If label has 'for' attribute, click that input
-            const forAttr = choice.attr('for');
-            if (forAttr) {
-                const targetInput = $(`#${forAttr}`);
-                if (targetInput.length) {
-                    targetInput.prop('checked', true);
-                    targetInput[0].click();
-                }
-            }
-
-            // Give time for selection to register
             setTimeout(() => {
-                // Find and click Check button
                 const checkBtn = question.find('button').filter(function() {
                     const text = $(this).text().trim().toLowerCase();
                     return (text === 'check' || text === 'submit') && $(this).is(':visible');
                 }).first();
 
                 if (checkBtn.length) {
-                    console.log(`🚀 Clicking Check...`);
-                    checkBtn.removeClass('auto-clicked');
                     checkBtn[0].click();
 
-                    // Wait for result
                     setTimeout(() => {
-                        const hasIncorrect = question.find('.incorrect, .zb-incorrect, .wrong, [class*="incorrect"]').length > 0;
-                        const hasCorrect = question.find('.correct, .answered-correctly, .zb-correct, [class*="correct"]').filter(function() {
-                            return !$(this).hasClass('incorrect');
-                        }).length > 0;
-
-                        console.log(`📊 Result - Incorrect: ${hasIncorrect}, Correct: ${hasCorrect}`);
-
-                        if (hasCorrect && !hasIncorrect) {
-                            console.log(`✅ CORRECT!`);
-                            return;
-                        } else {
-                            console.log(`❌ Wrong, trying next...`);
+                        const isCorrectNow = question.find('.zb-explanation.correct').length > 0;
+                        if (!isCorrectNow) {
                             currentChoiceIndex++;
                             setTimeout(tryNextChoice, 300);
                         }
                     }, RETRY_DELAY);
                 } else {
-                    console.log(`⚠️  No Check button found`);
                     currentChoiceIndex++;
                     setTimeout(tryNextChoice, 200);
                 }
-            }, 300); // Increased delay for selection
+            }, 300);
         }
 
         tryNextChoice();
     }
 
-    // Fallback method - click inputs directly
     function handleMultipleChoiceByInput(question, index) {
         const options = question.find('input[type="radio"], input[type="checkbox"]').filter(':visible');
-        
-        if (options.length === 0) {
-            console.log(`❌ No inputs found either`);
-            return;
-        }
-
-        console.log(`📋 Fallback: Found ${options.length} inputs`);
+        if (options.length === 0) return;
 
         let currentOptionIndex = 0;
 
@@ -250,9 +350,6 @@
             if (currentOptionIndex >= options.length) return;
 
             const option = $(options[currentOptionIndex]);
-            console.log(`🎯 Trying input ${currentOptionIndex + 1}/${options.length}`);
-
-            // Click the input
             option.prop('checked', true);
             option[0].click();
 
@@ -262,7 +359,7 @@
                     checkBtn[0].click();
                     
                     setTimeout(() => {
-                        const isCorrect = question.find('.correct').length > 0 && question.find('.incorrect').length === 0;
+                        const isCorrect = question.find('.zb-explanation.correct').length > 0;
                         if (!isCorrect) {
                             currentOptionIndex++;
                             setTimeout(tryNextOption, 300);
@@ -275,424 +372,198 @@
         tryNextOption();
     }
 
-    // Handle text input questions - EXTREME SPEED
+    // Handle text input questions
     function handleTextInput(question, index) {
-        const answerInfo = findAnswer(question);
+        const answer = findAnswer(question);
         
-        if (!answerInfo || !answerInfo.answer) {
+        if (!answer) {
             console.log(`❌ No answer found`);
             return;
         }
 
-        console.log(`💡 Answer: "${answerInfo.answer}"`);
+        console.log(`💡 Answer: "${answer}"`);
 
-        if (fillTextAnswer(question, answerInfo.answer)) {
+        if (fillTextAnswer(question, answer)) {
             setTimeout(() => clickSubmitButton(question, index), SUBMIT_DELAY);
         }
     }
 
-    // Find answer in question container - IMPROVED WITH extractFillInAnswer
+    // ==========================================
+    // ANSWER EXTRACTION - COMPLETELY REWRITTEN
+    // ==========================================
+    
     function findAnswer(question) {
-        let answer = null;
-        let type = 'unknown';
-
-        // Method 1: Look for the answer box
-        const answerBoxSelectors = [
-            '.forfeit-answer:first',
-            '.forfeit-content:first', 
-            '.correct-answer:first',
-            '.solution-content:first',
-            '.answer-key:first'
-        ];
-
-        for (let selector of answerBoxSelectors) {
-            const answerBox = question.find(selector).first();
+        console.log('🔎 Searching for answer...');
+        
+        // METHOD 1: Look for the forfeit-answer element which contains the revealed answer
+        // This is the orange/brown box that appears after clicking "Show Answer"
+        const forfeitAnswer = question.find('.forfeit-answer').first();
+        
+        if (forfeitAnswer.length > 0) {
+            console.log('   Found .forfeit-answer element');
             
-            if (answerBox.length && answerBox.is(':visible')) {
-                console.log(`🔎 Found answer box with selector: ${selector}`);
-                
-                // USE extractFillInAnswer untuk extract dengan benar
-                answer = extractFillInAnswer(answerBox);
-                
-                if (answer) {
-                    type = 'fill-in';
-                    console.log(`✅ Extracted answer: "${answer}"`);
-                    break;
+            // The answer is usually in a specific child element
+            // Try to find code/pre/samp first (for code answers)
+            let answerElement = forfeitAnswer.find('code, pre, samp, .zb-code').first();
+            
+            if (answerElement.length > 0) {
+                const answer = answerElement.text().trim();
+                if (answer && answer.length > 0) {
+                    console.log(`   ✅ Found answer in code element: "${answer}"`);
+                    return answer;
                 }
             }
-        }
-
-        // Method 2: If no answer found, try alternative selectors
-        if (!answer) {
-            console.log('🔄 Trying alternative method...');
             
-            const allAnswerElements = question.find('.forfeit-answer, .correct-answer, .solution-content');
+            // Otherwise, get the direct text content
+            // Clone the element and remove any nested explanation divs
+            const clone = forfeitAnswer.clone();
+            clone.find('.explanation, .zb-explanation, p').remove();
             
-            allAnswerElements.each(function() {
-                const elem = $(this);
-                answer = extractFillInAnswer(elem);
+            // Get text from what remains
+            const text = clone.text().trim();
+            
+            if (text) {
+                // Split by newlines and get the first non-empty line
+                const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 
-                if (answer) {
-                    type = 'fill-in';
-                    console.log(`✅ Found answer via alternative: "${answer}"`);
-                    return false; // break
-                }
-            });
-        }
-
-        // Clean up answer (only if not enum - preserve enum formatting)
-        if (answer && !answer.match(/enum\s+\w+/)) {
-            answer = cleanAnswer(answer);
-        }
-        
-        if (answer && type === 'unknown') {
-            type = determineAnswerType(question, answer);
-        }
-
-        return answer ? { answer, type } : null;
-    }
-
-    // Extract multiple choice answer - IMPROVED
-    function extractMultipleChoiceAnswer(section) {
-        // Look for checked radio button or checkbox
-        const checkedInput = section.find('input[type="radio"]:checked, input[type="checkbox"]:checked');
-        if (checkedInput.length > 0) {
-            const label = section.find(`label[for="${checkedInput.attr('id')}"]`).first();
-            if (label.length) {
-                return label.text().trim();
-            }
-        }
-
-        // Look for text that indicates the correct answer
-        const text = section.text().trim();
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        
-        for (let line of lines) {
-            // Skip meta lines
-            if (line.toLowerCase() === 'answer' || 
-                line.toLowerCase() === 'show answer' ||
-                line.toLowerCase().includes('correct answer')) {
-                continue;
-            }
-            
-            // Match patterns like: "A) Option", "A. Option"
-            const mcMatch = line.match(/^([A-Da-d])[).]\s*(.+)/);
-            if (mcMatch && mcMatch[2]) {
-                return mcMatch[2].trim();
-            }
-            
-            // If we have a substantial line that's not meta text, use it
-            if (line.length > 3 && !isMetaText(line)) {
-                return line;
-            }
-        }
-
-        return null;
-    }
-
-    // Extract fill-in answer - IMPROVED WITH ENUM SUPPORT
-    function extractFillInAnswer(element) {
-        const text = element.text().trim();
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        
-        console.log(`🔍 Extracting from ${lines.length} lines`);
-        
-        // FIRST: Check for code blocks (highest priority for enum)
-        const codeBlocks = element.find('code, pre, .code, .forfeit-code, samp, .zb-code');
-        if (codeBlocks.length > 0) {
-            const code = codeBlocks.first().text().trim();
-            if (code && code.length > 0 && !isMetaText(code)) {
-                console.log(`   ✅ Found code block: "${code}"`);
-                return code;
-            }
-        }
-        
-        for (let i = 0; i < lines.length; i++) {
-            let line = lines[i];
-            
-            console.log(`   Line ${i}: "${line}"`);
-            
-            // Skip meta text lines
-            if (isMetaText(line)) {
-                console.log(`   ⏭️  Skipped meta text`);
-                continue;
-            }
-            
-            // CHECK: Is this a simple number? (for integer value questions)
-            if (/^\d+$/.test(line)) {
-                console.log(`   ✅ Found number: "${line}"`);
-                return line;
-            }
-            
-            // CHECK: Is this an enum declaration?
-            if (line.match(/enum\s+\w+\s*\{[^}]*\}\s*;?/)) {
-                console.log(`   ✅ Found enum declaration: "${line}"`);
-                return line.endsWith(';') ? line : line + ';';
-            }
-            
-            // CHECK: Is this an enum variable declaration?
-            if (line.match(/^enum\s+\w+\s+\w+\s*;?$/)) {
-                console.log(`   ✅ Found enum variable: "${line}"`);
-                return line.endsWith(';') ? line : line + ';';
-            }
-            
-            // CHECK: Is this an assignment?
-            if (line.match(/^\w+\s*=\s*\w+\s*;?$/)) {
-                console.log(`   ✅ Found assignment: "${line}"`);
-                return line.endsWith(';') ? line : line + ';';
-            }
-            
-            // Skip long explanatory lines (likely not the answer itself)
-            if (line.length > 100) {
-                console.log(`   ⏭️  Skipped long explanation`);
-                continue;
-            }
-            
-            // Skip lines that look like explanations
-            if (isExplanationText(line)) {
-                console.log(`   ⏭️  Skipped explanation line`);
-                continue;
-            }
-            
-            // Remove common prefixes
-            line = line.replace(/^(answer|solution|correct answer):?\s*/i, '').trim();
-            
-            // Prefer short, concise answers (likely the actual answer)
-            if (line.length > 0 && line.length < 50 && !isMetaText(line)) {
-                // Check if it's just a number or simple text
-                if (/^[\d\w\s\-\.,:;]+$/.test(line)) {
-                    console.log(`   ✅ Selected: "${line}"`);
+                for (const line of lines) {
+                    // Skip if it's just "Answer" label
+                    if (/^answer:?$/i.test(line)) continue;
+                    
+                    // This should be the actual answer
+                    console.log(`   ✅ Found answer: "${line}"`);
                     return line;
                 }
             }
-        }
-        
-        // Fallback: look for the first short line that's not meta
-        for (let line of lines) {
-            if (!isMetaText(line) && line.length > 0 && line.length < 50) {
-                const cleaned = line.replace(/^(answer|solution|correct answer):?\s*/i, '').trim();
-                if (cleaned.length > 0) {
-                    console.log(`   ✅ Fallback selected: "${cleaned}"`);
-                    return cleaned;
+            
+            // Fallback: just get the first bit of text from forfeit-answer
+            const allText = forfeitAnswer.text().trim();
+            const match = allText.match(/^(?:Answer:?\s*)?(.+?)(?:\n|$)/i);
+            if (match && match[1]) {
+                const answer = match[1].trim();
+                if (answer && !/^(the |this |a |an )/i.test(answer)) {
+                    console.log(`   ✅ Extracted answer: "${answer}"`);
+                    return answer;
                 }
             }
         }
         
-        // LAST RESORT: Extract number from explanation like "FURNACE_ON is 2"
-        const numberInExplanation = text.match(/(\w+)\s+is\s+(\d+)/);
-        if (numberInExplanation) {
-            const num = numberInExplanation[2];
-            console.log(`   ✅ Extracted number from explanation: "${num}"`);
-            return num;
+        // METHOD 2: Look for zb-explanation with the answer
+        const explanation = question.find('.zb-explanation').first();
+        if (explanation.length > 0) {
+            console.log('   Found .zb-explanation element');
+            
+            // Look for "Answer" header followed by the answer
+            const html = explanation.html();
+            
+            // Try to find a pattern like: Answer<br>3.5 or Answer: 3.5
+            const answerMatch = html.match(/Answer\s*(?:<[^>]+>)*\s*:?\s*(?:<[^>]+>)*\s*([^<\n]+)/i);
+            if (answerMatch && answerMatch[1]) {
+                const answer = answerMatch[1].trim();
+                if (answer && answer.length < 50 && !/^(the |this |a |an )/i.test(answer.toLowerCase())) {
+                    console.log(`   ✅ Found answer from explanation: "${answer}"`);
+                    return answer;
+                }
+            }
+            
+            // Look for answer box inside explanation
+            const answerBox = explanation.find('.forfeit-answer, .answer-box, .answer').first();
+            if (answerBox.length > 0) {
+                const boxText = answerBox.text().trim();
+                if (boxText && boxText.length < 50) {
+                    console.log(`   ✅ Found answer in box: "${boxText}"`);
+                    return boxText;
+                }
+            }
         }
         
+        // METHOD 3: Look for any element that looks like it contains just an answer
+        const possibleAnswerContainers = question.find('[class*="answer"], [class*="solution"], [class*="forfeit"]');
+        for (let i = 0; i < possibleAnswerContainers.length; i++) {
+            const container = $(possibleAnswerContainers[i]);
+            const text = container.text().trim();
+            
+            // Check if it's a short answer (numbers, short text)
+            if (/^-?\d+\.?\d*$/.test(text)) {
+                console.log(`   ✅ Found numeric answer: "${text}"`);
+                return text;
+            }
+            
+            // Check for answer after "Answer:" label
+            const labelMatch = text.match(/Answer:?\s*(.+)/i);
+            if (labelMatch && labelMatch[1]) {
+                const answer = labelMatch[1].split('\n')[0].trim();
+                if (answer.length < 50) {
+                    console.log(`   ✅ Found labeled answer: "${answer}"`);
+                    return answer;
+                }
+            }
+        }
+        
+        console.log('   ❌ Could not find answer');
         return null;
     }
 
-    // Determine answer type
-    function determineAnswerType(question, answer) {
-        if (question.find('input[type="radio"], input[type="checkbox"]').length > 0) {
-            return 'multiple-choice';
-        }
-        
-        if (answer.length === 1 && /[A-Da-d]/.test(answer)) {
-            return 'multiple-choice';
-        }
-        
-        if (question.find('textarea, input[type="text"], input[type="number"]').length > 0) {
-            return 'fill-in';
-        }
-        
-        return 'fill-in';
-    }
-
-    // Fill answer based on type
-    function fillAnswerBasedOnType(question, answerInfo) {
-        const { answer, type } = answerInfo;
-        
-        switch(type) {
-            case 'multiple-choice':
-                return fillMultipleChoiceAnswer(question, answer);
-            case 'fill-in':
-                return fillTextAnswer(question, answer);
-            default:
-                console.log(`❓ Unknown answer type: ${type}`);
-                return false;
-        }
-    }
-
-    // Fill multiple choice answer
-    function fillMultipleChoiceAnswer(question, answer) {
-        console.log(`🎯 Filling multiple choice: "${answer}"`);
-        
-        const options = question.find('label, .choice-text, .option-text').filter(function() {
-            const text = $(this).text().trim().toLowerCase();
-            const answerLower = answer.toLowerCase();
-            
-            return text === answerLower || 
-                   text.includes(answerLower) || 
-                   answerLower.includes(text);
-        });
-        
-        if (options.length > 0) {
-            const option = options.first();
-            const input = option.find('input').first();
-            
-            if (input.length) {
-                input.prop('checked', true);
-                input.trigger('click');
-                input.trigger('change');
-                console.log(`✅ Selected: "${option.text().trim()}"`);
-                return true;
-            } else {
-                option[0].click();
-                console.log(`✅ Clicked: "${option.text().trim()}"`);
-                return true;
-            }
-        }
-        
-        console.log('❌ Could not find matching option');
-        return false;
-    }
-
-    // Fill text answer - RELIABLE MODE
+    // Fill text answer
     function fillTextAnswer(question, answer) {
-        const inputField = findInputField(question);
-        if (!inputField.length) return false;
+        const inputField = question.find('input[type="text"]:visible, textarea:visible, input[type="number"]:visible').first();
+        
+        if (!inputField.length) {
+            console.log('❌ No input field found');
+            return false;
+        }
         
         try {
-            if (inputField.is('input, textarea')) {
-                const element = inputField[0];
-                
-                // Focus first to activate the field
-                inputField.focus();
-                element.focus();
-                
-                // Set value with multiple methods for reliability
-                element.value = answer;
-                inputField.val(answer);
-                
-                // Use native setter for React compatibility
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 
-                    'value'
-                )?.set;
-                
-                if (nativeInputValueSetter) {
-                    nativeInputValueSetter.call(element, answer);
-                }
-                
-                // Trigger comprehensive events
-                element.dispatchEvent(new Event('input', { bubbles: true }));
-                element.dispatchEvent(new Event('change', { bubbles: true }));
-                element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-                
-                // jQuery triggers as backup
-                inputField.trigger('input');
-                inputField.trigger('change');
-                inputField.trigger('blur');
-                
-                console.log(`✅ Filled: "${answer}"`);
-                return true;
-            } 
-            else if (inputField.attr('contenteditable') === 'true') {
-                inputField.text(answer);
-                inputField.trigger('input');
-                inputField.trigger('change');
-                return true;
+            const element = inputField[0];
+            
+            // Clear existing value first
+            element.value = '';
+            inputField.val('');
+            
+            // Set the new value
+            element.value = answer;
+            inputField.val(answer);
+            
+            // Use native setter for React compatibility
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 
+                'value'
+            )?.set;
+            
+            if (nativeInputValueSetter) {
+                nativeInputValueSetter.call(element, answer);
             }
-            else if (inputField.hasClass('CodeMirror')) {
-                const cm = inputField[0].CodeMirror;
-                if (cm) {
-                    cm.setValue(answer);
-                    cm.refresh();
-                }
-                return true;
-            }
-            return false;
+            
+            // Trigger all necessary events
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+            element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+            element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+            
+            inputField.trigger('input');
+            inputField.trigger('change');
+            inputField.trigger('blur');
+            
+            console.log(`✅ Filled input with: "${answer}"`);
+            return true;
         } catch (error) {
-            console.log(`❌ Error: ${error}`);
+            console.log(`❌ Error filling input: ${error}`);
             return false;
         }
     }
 
-    // Find input field
-    function findInputField(question) {
-        const selectors = [
-            'textarea:visible',
-            'input[type="text"]:visible',
-            'input[type="number"]:visible',
-            '.short-answer-input:visible',
-            '.zb-text-area:visible',
-            'div[contenteditable="true"]:visible',
-            '.CodeMirror:visible'
-        ];
-        
-        for (let selector of selectors) {
-            const input = question.find(selector).first();
-            if (input.length) {
-                return input;
-            }
-        }
-        
-        return $();
-    }
-
-    // Click submit/check button - RELIABLE
+    // Click submit/check button
     function clickSubmitButton(question, index) {
         const buttons = question.find('button').filter(function() {
             const text = $(this).text().trim().toLowerCase();
             return (text === 'check' || text === 'submit') && $(this).is(':visible');
         });
         
-        if (buttons.length > 0 && !buttons.first().hasClass('auto-clicked')) {
-            setTimeout(() => {
-                console.log(`🚀 Submitting...`);
-                buttons.first()[0].click();
-                buttons.first().addClass('auto-clicked');
-            }, 150);
+        if (buttons.length > 0) {
+            console.log(`🚀 Clicking Check button...`);
+            buttons.first()[0].click();
             return true;
         }
-        return false;
-    }
-
-    // Helper functions
-    function cleanAnswer(answer) {
-        return answer
-            .replace(/^(answer|solution|correct answer):?\s*/i, '')
-            .replace(/^\d+[.)]\s*/, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
-    function isMetaText(text) {
-        const metaWords = ['show answer', 'correct answer', 'solution', 'check', 'submit', 'next', 'question', 'press again'];
-        const lowerText = text.toLowerCase();
-        // Check if the entire text is just a meta word, or if it starts with "Answer" as a label
-        return metaWords.some(word => lowerText === word) || 
-               (lowerText === 'answer' && text.length < 10);
-    }
-
-    function isExplanationText(text) {
-        const explanationKeywords = [
-            'loop', 'body', 'execute', 'time', 'gotten', 'initialized',
-            'will be', 'as follows', 'true', 'false', 'because', 'thus',
-            'first', 'second', 'third', 'input', 'relevant', 'additional',
-            'declares', 'assigned', 'integer value', 'named values', 'within'
-        ];
-        const lowerText = text.toLowerCase();
-        
-        // Check for explanation keywords
-        if (explanationKeywords.some(word => lowerText.includes(word))) {
-            return true;
-        }
-        
-        // Check for "X is Y" pattern which indicates explanation
-        // BUT make sure we're not rejecting single numbers
-        if (lowerText.match(/\w+\s+is\s+\d+/) && text.length > 15) {
-            return true;
-        }
-        
         return false;
     }
 
@@ -706,10 +577,23 @@
     if (AUTO_RUN) {
         setTimeout(runAutoComplete, 3000);
         
+        setInterval(() => {
+            handleAnimations();
+        }, ANIMATION_CHECK_INTERVAL);
+        
+        const pageObserver = new MutationObserver(() => {
+            findAndProcessAllAnimationControls();
+        });
+        pageObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
         let lastUrl = location.href;
         setInterval(() => {
             if (location.href !== lastUrl) {
                 lastUrl = location.href;
+                processedElements.clear();
                 setTimeout(runAutoComplete, 2000);
             }
         }, 1000);
@@ -718,23 +602,49 @@
     // Manual controls
     window.zyAuto = {
         run: runAutoComplete,
+        animations: handleAnimations,
+        speed: function() {
+            document.querySelectorAll('.animation-controls').forEach(control => {
+                enable2xSpeed(control);
+            });
+            document.querySelectorAll('.speed-control input[type="checkbox"]').forEach(checkbox => {
+                if (!checkbox.checked) checkbox.click();
+            });
+            console.log('⚡ Enabled all 2x speed controls');
+        },
         reset: function() {
             processedElements.clear();
             isRunning = false;
             $('.auto-processed, .auto-clicked').removeClass('auto-processed auto-clicked');
             console.log('✅ Reset completed');
         },
-        debug: function() {
-            const questions = $('.question-set-question, .zb-activity').filter(':visible');
-            console.log(`Found ${questions.length} questions`);
+        // Debug function to see what the script finds
+        testAnswer: function() {
+            const questions = $('.question-set-question, .short-answer-question').filter(':visible');
             questions.each(function(i) {
-                console.log(`\nQuestion ${i + 1}:`);
-                const answer = findAnswer($(this));
-                console.log('Answer:', answer);
+                console.log(`\n=== Question ${i + 1} ===`);
+                const question = $(this);
+                
+                // Show forfeit-answer content
+                const forfeit = question.find('.forfeit-answer');
+                if (forfeit.length) {
+                    console.log('Forfeit-answer HTML:', forfeit.html());
+                    console.log('Forfeit-answer text:', forfeit.text());
+                }
+                
+                // Show zb-explanation content  
+                const explanation = question.find('.zb-explanation');
+                if (explanation.length) {
+                    console.log('Explanation HTML:', explanation.html());
+                }
+                
+                // Show what findAnswer returns
+                const answer = findAnswer(question);
+                console.log('Extracted answer:', answer);
             });
         }
     };
 
-    console.log('✅ zyBooks Autocomplete Enhanced ready!');
-    console.log('Commands: zyAuto.run(), zyAuto.reset(), zyAuto.debug()');
+    console.log('✅ zyBooks Autocomplete v0.5 ready!');
+    console.log('Commands: zyAuto.run(), zyAuto.testAnswer(), zyAuto.speed(), zyAuto.reset()');
 })();
